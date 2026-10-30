@@ -1,0 +1,22 @@
+name: deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        default: prod
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - run: echo "Deploying $REPO@$SHA to $ENVIRONMENT"
+        env:
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          ENVIRONMENT: ${{ inputs.environment }}
