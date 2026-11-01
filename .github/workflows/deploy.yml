@@ -39,9 +39,14 @@ jobs:
             echo "No deploy-policy report found for $SHA." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          {
+          report=$(
             echo "## $(jq -r .output.title <<<"$check")"
             jq -r .output.summary <<<"$check"
             echo
             echo "Full report: $(jq -r .html_url <<<"$check")"
-          } >> "$GITHUB_STEP_SUMMARY"
+          )
+          echo "$report" | tee -a "$GITHUB_STEP_SUMMARY"
+          # One annotation per reason, so they sit next to GitHub's generic "rejected" message.
+          jq -r '.output.summary' <<<"$check" | grep '^- ' | while read -r line; do
+            echo "::error title=Deploy blocked::${line#- }"
+          done
