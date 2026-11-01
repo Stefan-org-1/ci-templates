@@ -20,3 +20,28 @@ jobs:
           REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
           ENVIRONMENT: ${{ inputs.environment }}
+
+  # A rejected deploy job only shows "rejected". Copy the gate's report onto the run summary.
+  explain:
+    needs: deploy
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show why the deploy was blocked
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          check=$(gh api "repos/$REPO/commits/$SHA/check-runs?check_name=deploy-policy%20($ENVIRONMENT)" --jq '.check_runs[0]')
+          if [ -z "$check" ] || [ "$check" = null ]; then
+            echo "No deploy-policy report found for $SHA." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          {
+            echo "## $(jq -r .output.title <<<"$check")"
+            jq -r .output.summary <<<"$check"
+            echo
+            echo "Full report: $(jq -r .html_url <<<"$check")"
+          } >> "$GITHUB_STEP_SUMMARY"
