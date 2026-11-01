@@ -18,7 +18,7 @@ jobs:
 
 ## v2
 
-`node-build.yml@v2` runs the mandatory scan in its own job and signs the result as an attestation. The calling job must grant:
+`node-build.yml@v2` runs the mandatory scans in their own job and signs the result as an attestation: `secret_scan` and `sonarqube`, each `pass` or `fail`. SonarQube is a mock for now (`sonarqube_source: mock`). The calling job must grant:
 
 ```yaml
 permissions:

@@ -35,20 +35,28 @@ jobs:
         with:
           ref: ${{ env.SHA }}
           persist-credentials: false
-      # Stand-in for a real secret scanner and SonarQube.
+      # Stand-in for a real secret scanner.
       - name: Secret scan
         run: |
           if git grep -nE 'BEGIN [A-Z ]*PRIVATE KEY|AKIA[0-9A-Z]{16}'; then
             echo "::error::Possible secret committed"
             exit 1
           fi
+      # Mock of a SonarQube analysis and its quality gate. A real one replaces this step only.
+      - name: SonarQube (mock)
+        id: sonar
+        run: |
+          echo "status=pass" >> "$GITHUB_OUTPUT"
+          echo "source=mock" >> "$GITHUB_OUTPUT"
       - name: Write scan subject
         run: printf '%s@%s' "$GITHUB_REPOSITORY" "$SHA" > scan-subject.txt
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: scan-subject.txt
           predicate-type: https://github.com/Stefan-org-1/ci-templates/scan/v1
-          predicate: '{"secret_scan": "pass", "sonarqube": "not-configured"}'
+          predicate: >-
+            {"secret_scan": "pass", "sonarqube": "${{ steps.sonar.outputs.status }}",
+            "sonarqube_source": "${{ steps.sonar.outputs.source }}"}
 
   # Team hooks run here, never in scan.
   build:
