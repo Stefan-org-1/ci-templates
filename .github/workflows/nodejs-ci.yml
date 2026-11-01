@@ -2,8 +2,7 @@ name: nodejs-ci
 
 # Scan and build a Node.js repo in one call. Deploy is not included: call deploy.yml
 # yourself, so it can wait for your own jobs.
-# Uses the blocks at their
-# moving tags, so block fixes arrive without a release of this file.
+# Uses the blocks at their moving tags, so block fixes arrive without a release of this file.
 # Callers must grant id-token: write and attestations: write, for the scan.
 
 on:
