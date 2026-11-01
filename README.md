@@ -48,6 +48,8 @@ jobs:
 
 `nodejs-service.yml` calls the other templates at their moving tags, so their fixes arrive without a release of it.
 
+A deploy inside `nodejs-service.yml` cannot wait for your own jobs. If a job of yours must pass before deploying, leave `deploy-to` empty and call `deploy.yml` yourself with `needs:`.
+
 ## Versions
 
 Each template is versioned on its own, with tags named after it: `scan-v1`, `nodejs-build-v1`, `deploy-v1`, `nodejs-service-v1`.
