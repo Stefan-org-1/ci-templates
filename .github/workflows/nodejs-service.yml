@@ -1,0 +1,47 @@
+name: nodejs-service
+
+# Scan, build and optionally deploy a Node.js repo in one call. Uses the blocks at their
+# moving tags, so block fixes arrive without a release of this file.
+# Callers must grant id-token: write and attestations: write, for the scan.
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        type: string
+        default: "22"
+      working-directory:
+        type: string
+        default: "."
+      run-tests:
+        type: boolean
+        default: true
+      deploy-to:
+        description: Environment to deploy to. Empty skips the deploy.
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    uses: Stefan-org-1/ci-templates/.github/workflows/scan.yml@scan-v1
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+
+  build:
+    uses: Stefan-org-1/ci-templates/.github/workflows/nodejs-build.yml@nodejs-build-v1
+    with:
+      node-version: ${{ inputs.node-version }}
+      working-directory: ${{ inputs.working-directory }}
+      run-tests: ${{ inputs.run-tests }}
+
+  deploy:
+    needs: [scan, build]
+    if: inputs.deploy-to != ''
+    uses: Stefan-org-1/ci-templates/.github/workflows/deploy.yml@deploy-v1
+    with:
+      environment: ${{ inputs.deploy-to }}
