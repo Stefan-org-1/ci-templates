@@ -1,6 +1,8 @@
-name: nodejs-service
+name: nodejs-ci
 
-# Scan, build and optionally deploy a Node.js repo in one call. Uses the blocks at their
+# Scan and build a Node.js repo in one call. Deploy is not included: call deploy.yml
+# yourself, so it can wait for your own jobs.
+# Uses the blocks at their
 # moving tags, so block fixes arrive without a release of this file.
 # Callers must grant id-token: write and attestations: write, for the scan.
 
@@ -16,10 +18,6 @@ on:
       run-tests:
         type: boolean
         default: true
-      deploy-to:
-        description: Environment to deploy to. Empty skips the deploy.
-        type: string
-        default: ""
 
 permissions:
   contents: read
@@ -39,9 +37,3 @@ jobs:
       working-directory: ${{ inputs.working-directory }}
       run-tests: ${{ inputs.run-tests }}
 
-  deploy:
-    needs: [scan, build]
-    if: inputs.deploy-to != ''
-    uses: Stefan-org-1/ci-templates/.github/workflows/deploy.yml@deploy-v1
-    with:
-      environment: ${{ inputs.deploy-to }}

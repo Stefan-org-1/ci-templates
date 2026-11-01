@@ -7,7 +7,7 @@ Reusable workflows for Stefan-org-1.
 | `scan.yml` | Mandatory scans: secrets, SonarQube (mock). Signs the result | Yes. The deploy gate requires its signed result |
 | `nodejs-build.yml` | Builds and tests a Node.js repo, with team hooks | No. A team may build in its own job |
 | `deploy.yml` | Deploys to an environment | Yes. The gate rejects deploys that do not use it |
-| `nodejs-service.yml` | All of the above in one call: scan, build, and deploy if `deploy-to` is set | Convenience over the three above |
+| `nodejs-ci.yml` | `scan.yml` and `nodejs-build.yml` in one call | Convenience over those two |
 | `node-build.yml` | Deprecated: build and scan in one template. Use `scan.yml` and `nodejs-build.yml` | |
 
 ```yaml
@@ -32,27 +32,36 @@ jobs:
       environment: prod
 ```
 
-Or the same in one call, with your own jobs alongside:
+Or scan and build in one call:
 
 ```yaml
 jobs:
-  pipeline:
-    uses: Stefan-org-1/ci-templates/.github/workflows/nodejs-service.yml@nodejs-service-v1
+  ci:
+    uses: Stefan-org-1/ci-templates/.github/workflows/nodejs-ci.yml@nodejs-ci-v1
     permissions:
       contents: read
       id-token: write
       attestations: write
+
+  lint:
+    runs-on: ubuntu-latest
+    steps: [...]
+
+  deploy:
+    needs: [ci, lint]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: Stefan-org-1/ci-templates/.github/workflows/deploy.yml@deploy-v1
     with:
-      deploy-to: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'prod' || '' }}
+      environment: prod
 ```
 
-`nodejs-service.yml` calls the other templates at their moving tags, so their fixes arrive without a release of it.
+`nodejs-ci.yml` calls the other templates at their moving tags, so their fixes arrive without a release of it.
 
-A deploy inside `nodejs-service.yml` cannot wait for your own jobs. If a job of yours must pass before deploying, leave `deploy-to` empty and call `deploy.yml` yourself with `needs:`.
+No template includes the deploy. A job inside a called template cannot wait for jobs in your file, so a bundled deploy could run before your own checks pass. Call `deploy.yml` yourself and list your jobs under `needs:`.
 
 ## Versions
 
-Each template is versioned on its own, with tags named after it: `scan-v1`, `nodejs-build-v1`, `deploy-v1`, `nodejs-service-v1`.
+Each template is versioned on its own, with tags named after it: `scan-v1`, `nodejs-build-v1`, `deploy-v1`, `nodejs-ci-v1`.
 
 - `<template>-v1` moves forward with every non-breaking release, so fixes reach every repo with no PRs.
 - Breaking changes ship as the next major, such as `scan-v2`. Teams move to it with a PR, within a deprecation window.
