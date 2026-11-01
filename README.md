@@ -8,6 +8,7 @@ Reusable workflows for Stefan-org-1.
 | `nodejs-build.yml` | Builds and tests a Node.js repo, with team hooks | No. A team may build in its own job |
 | `deploy.yml` | Deploys to an environment | Yes. The gate rejects deploys that do not use it |
 | `nodejs-ci.yml` | `scan.yml` and `nodejs-build.yml` in one call | Convenience over those two |
+| `release.yml` | Validates, then tags the branch head as release `X.Y.Z` | The paved road for releases |
 | `node-build.yml` | Deprecated: build and scan in one template. Use `scan.yml` and `nodejs-build.yml` | |
 
 ```yaml
@@ -61,7 +62,7 @@ No template includes the deploy. A job inside a called template cannot wait for 
 
 ## Versions
 
-Each template is versioned on its own, with tags named after it: `scan-v1`, `nodejs-build-v1`, `deploy-v1`, `nodejs-ci-v1`.
+Each template is versioned on its own, with tags named after it: `scan-v1`, `nodejs-build-v1`, `deploy-v1`, `nodejs-ci-v1`, `release-v1`.
 
 - `<template>-v1` moves forward with every non-breaking release, so fixes reach every repo with no PRs.
 - Breaking changes ship as the next major, such as `scan-v2`. Teams move to it with a PR, within a deprecation window.
@@ -76,6 +77,43 @@ Runs in its own job, on a fresh runner, from a fresh checkout of the exact commi
 ## nodejs-build.yml
 
 Runs `npm ci`, `npm run build` and `npm test` as defined in your `package.json`. Custom steps go in `.github/actions/pre-build/action.yml` and `.github/actions/post-build/action.yml` in your repo.
+
+## release.yml
+
+Call it from a workflow your team runs by hand, from `main` or a `release/X.Y.z` branch:
+
+```yaml
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact X.Y.Z. Empty picks the next one.
+        default: ""
+      bump:
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+jobs:
+  release:
+    uses: Stefan-org-1/ci-templates/.github/workflows/release.yml@release-v1
+    permissions:
+      contents: write
+      checks: read
+      pull-requests: read
+    with:
+      version: ${{ inputs.version }}
+      bump: ${{ inputs.bump }}
+```
+
+Before tagging, it checks:
+
+- The branch is `main` or `release/X.Y.z`.
+- The commit reached the branch through a PR that passed the `policy` check.
+- The commit is not already released.
+- The version is new and newer than the latest on its line. `release/2.3.z` only releases `2.3.N` patches. `minor` and `major` bumps come from `main`.
+
+Release tags `X.Y.Z` cannot be moved or deleted, so a bad tag would use up its version for good. Pushing a tag by hand still works, but skips these checks. The deploy gate checks the release again either way.
 
 ## Customizing your pipeline
 

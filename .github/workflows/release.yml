@@ -1,0 +1,112 @@
+name: release
+
+# Cuts a release: validates, then tags the head of the branch it runs on as X.Y.Z.
+# Run it from main or a release/X.Y.z branch. Tags are immutable, so every check runs first.
+#
+# - No version: the next patch on that branch's line.
+# - bump: minor or major, from main only.
+# - version: an exact X.Y.Z, checked against the same rules.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        default: ""
+      bump:
+        type: string
+        default: patch
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # create the tag
+      checks: read
+      pull-requests: read
+    steps:
+      - name: Validate and tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          IS_BRANCH: ${{ github.ref_type == 'branch' }}
+          SHA: ${{ github.sha }}
+          VERSION: ${{ inputs.version }}
+          BUMP: ${{ inputs.bump }}
+          GATE_APP: stefan-org-1-deploy-gate
+        shell: python3 {0}
+        run: |
+          import json, os, re, subprocess, sys
+
+          def api(path, *args):
+              out = subprocess.run(["gh", "api", path, *args], capture_output=True, text=True, check=True).stdout
+              return json.loads(out) if out else None
+
+          def fail(msg):
+              print(f"::error::{msg}")
+              sys.exit(1)
+
+          repo, branch, sha = os.environ["REPO"], os.environ["BRANCH"], os.environ["SHA"]
+          wanted, bump = os.environ["VERSION"].strip(), os.environ["BUMP"]
+          semver = lambda v: tuple(map(int, v.split(".")))
+          line = re.fullmatch(r"release/(\d+)\.(\d+)\.z", branch)
+          if os.environ["IS_BRANCH"] != "true" or (branch != "main" and not line):
+              fail(f"Run this from main or a release/X.Y.z branch, not {branch}")
+
+          # The commit must have reached the branch through a PR that passed the merge gate.
+          prs = api(f"repos/{repo}/commits/{sha}/pulls")
+          heads = [p["head"]["sha"] for p in prs if p.get("merged_at")]
+          passed = any(r["app"]["slug"] == os.environ["GATE_APP"] and r["conclusion"] == "success"
+                       for h in heads
+                       for r in api(f"repos/{repo}/commits/{h}/check-runs?check_name=policy")["check_runs"])
+          if not passed:
+              fail(f"{sha[:7]} did not reach {branch} through a PR that passed the policy check")
+
+          tags = api(f"repos/{repo}/tags?per_page=100", "--paginate", "--slurp")
+          tags = [t for page in tags for t in page]
+          releases = sorted((semver(t["name"]) for t in tags if re.fullmatch(r"\d+\.\d+\.\d+", t["name"])))
+          already = [t["name"] for t in tags if t["commit"]["sha"] == sha and re.fullmatch(r"\d+\.\d+\.\d+", t["name"])]
+          if already:
+              fail(f"{sha[:7]} is already released as {', '.join(already)}")
+
+          if line:
+              major, minor = int(line[1]), int(line[2])
+              on_line = [r for r in releases if r[:2] == (major, minor)]
+              if not on_line:
+                  fail(f"No {major}.{minor}.x release exists to maintain on {branch}")
+              latest = max(on_line)
+              auto = (major, minor, latest[2] + 1)
+          else:
+              latest = max(releases, default=(0, 0, 0))
+              auto = {"patch": (latest[0], latest[1], latest[2] + 1),
+                      "minor": (latest[0], latest[1] + 1, 0),
+                      "major": (latest[0] + 1, 0, 0)}.get(bump)
+              if auto is None:
+                  fail(f"bump must be patch, minor or major, not {bump}")
+              if not releases:
+                  auto = (1, 0, 0)
+
+          if wanted:
+              if not re.fullmatch(r"\d+\.\d+\.\d+", wanted):
+                  fail(f"version must be X.Y.Z, not {wanted}")
+              v = semver(wanted)
+              if v in releases:
+                  fail(f"{wanted} already exists")
+              if line and (v[:2] != (major, minor) or v[2] == 0):
+                  fail(f"{branch} can only release {major}.{minor}.N patches")
+              if v <= latest:
+                  fail(f"{wanted} is not newer than {'.'.join(map(str, latest))}")
+          else:
+              v = auto
+          version = ".".join(map(str, v))
+
+          api(f"repos/{repo}/git/refs", "-f", f"ref=refs/tags/{version}", "-f", f"sha={sha}")
+          url = f"https://github.com/{repo}/tree/{version}"
+          print(f"Released {version} at {sha[:7]} from {branch}: {url}")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as s:
+              s.write(f"Released [{version}]({url}) at `{sha[:7]}` from `{branch}`.\n\n"
+                      f"Deploy it: run the repo's deploy workflow from tag `{version}`.\n")
