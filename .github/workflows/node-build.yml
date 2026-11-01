@@ -1,5 +1,6 @@
 name: node-build
 
+# Deprecated: use scan.yml@scan-v1 and nodejs-build.yml@nodejs-build-v1.
 # v2: mandatory checks run in their own job and sign their result.
 # Callers must grant id-token: write and attestations: write.
 

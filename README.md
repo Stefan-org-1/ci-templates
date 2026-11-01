@@ -1,33 +1,53 @@
 # ci-templates
 
-Reusable workflows for Stefan-org-1. Call them by major tag:
+Reusable workflows for Stefan-org-1.
+
+| Template | What it does | Required |
+|---|---|---|
+| `scan.yml` | Mandatory scans: secrets, SonarQube (mock). Signs the result | Yes. The deploy gate requires its signed result |
+| `nodejs-build.yml` | Builds and tests a Node.js repo, with team hooks | No. A team may build in its own job |
+| `deploy.yml` | Deploys to an environment | Yes. The gate rejects deploys that do not use it |
+| `node-build.yml` | Deprecated: build and scan in one template. Use `scan.yml` and `nodejs-build.yml` | |
 
 ```yaml
 jobs:
-  build:
-    uses: Stefan-org-1/ci-templates/.github/workflows/node-build.yml@v2
+  scan:
+    uses: Stefan-org-1/ci-templates/.github/workflows/scan.yml@scan-v1
     permissions:
       contents: read
       id-token: write
       attestations: write
+
+  build:
+    uses: Stefan-org-1/ci-templates/.github/workflows/nodejs-build.yml@nodejs-build-v1
     with:
       node-version: "22"
+
+  deploy:
+    needs: [scan, build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: Stefan-org-1/ci-templates/.github/workflows/deploy.yml@deploy-v1
+    with:
+      environment: prod
 ```
 
-`v1` and `v2` move forward with every non-breaking release. Breaking changes ship as a new major.
+## Versions
 
-## v2
+Each template is versioned on its own, with tags named after it: `scan-v1`, `nodejs-build-v1`, `deploy-v1`.
 
-`node-build.yml@v2` runs the mandatory scans in their own job and signs the result as an attestation: `secret_scan` and `sonarqube`, each `pass` or `fail`. SonarQube is a mock for now (`sonarqube_source: mock`). The calling job must grant:
+- `<template>-v1` moves forward with every non-breaking release, so fixes reach every repo with no PRs.
+- Breaking changes ship as the next major, such as `scan-v2`. Teams move to it with a PR, within a deprecation window.
+- `<template>-v1.2.3` tags are fixed, for pinning.
 
-```yaml
-permissions:
-  contents: read
-  id-token: write
-  attestations: write
-```
+`node-build.yml` still uses the older repo-wide tags `v1` and `v2`.
 
-Custom build steps go in `.github/actions/pre-build/action.yml` and `.github/actions/post-build/action.yml` in your repo. They run in the `build` job only.
+## scan.yml
+
+Runs in its own job, on a fresh runner, from a fresh checkout of the exact commit. Signs `{"secret_scan": "pass", "sonarqube": "pass", "sonarqube_source": "mock"}` as an attestation over `<repo>@<sha>`. The calling job must grant `id-token: write` and `attestations: write`.
+
+## nodejs-build.yml
+
+Runs `npm ci`, `npm run build` and `npm test` as defined in your `package.json`. Custom steps go in `.github/actions/pre-build/action.yml` and `.github/actions/post-build/action.yml` in your repo.
 
 ## Customizing your pipeline
 
@@ -35,19 +55,21 @@ Your team owns `ci.yml`. Without asking platform you can:
 
 - Add your own jobs: lint, e2e, nightly runs.
 - Configure templates through their inputs.
-- Add build steps through the `pre-build` and `post-build` hooks.
+- Add build steps through the `pre-build` and `post-build` hooks, or replace `nodejs-build.yml` with your own build.
 - Choose what starts a deploy: a push to `main`, a manual run, or a tag.
 
 ### Why that cannot skip a mandatory check
 
 | If a pipeline... | Then |
 |---|---|
-| Drops the template's scan job | No signed scan result exists. The gate rejects the merge and the deploy, where the repo's rule sets include `scanned` |
-| Adds its own job that signs "scan passed" | The signature names your `ci.yml`, not this repo's template. Rejected |
-| Tampers with the scan from a hook | Hooks run in the `build` job. The scan runs in its own job, on a fresh runner, from a fresh checkout |
+| Does not call `scan.yml` | No signed scan result exists. The gate rejects the merge and the deploy, where the repo's rule sets include `scanned` |
+| Adds its own job that signs "scan passed" | The signature names your `ci.yml`, not `scan.yml`. Rejected |
+| Tampers with the scan from a hook or its own build | Team code runs in other jobs. The scan runs in its own job, on a fresh runner, from a fresh checkout |
 | Deploys without `deploy.yml` | Rejected (`central-deploy`) |
 | Deploys from a job with no environment | It gets no prod credentials: those belong in the `prod` environment, released only after the gate approves |
 | Removes the gate from its workflow | The gate is not in the workflow. A repo ruleset and the environment's protection rule require it, and teams cannot edit either |
 | Uses an action not on the allow-list, or not pinned to a commit SHA | The org Actions policy blocks the run |
 
 Any change under `.github/workflows/` also needs a sentinel's approval (`workflow-sentinel`).
+
+A team's own build is not yet checked. Once deploys ship real images, the gate will need proof of where the image was built.
