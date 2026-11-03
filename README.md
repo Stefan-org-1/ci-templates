@@ -88,11 +88,13 @@ Runs `npm ci`, `npm run build` and `npm test` as defined in your `package.json`.
 
 Deploys to the environment you pass. Where the environment has `AZURE_CLIENT_ID` set, it logs in to Azure with GitHub's OIDC token and tags the resource group with the version, the mock deploy. The calling job must grant `id-token: write`.
 
-No secret is stored for Azure. Azure trusts the token only if its subject names your repo, the environment and this template:
+No secret is stored for Azure. Azure trusts the token only if its subject names your repo, the environment and this template, and the deploy log prints the subject it sent. For example:
 
 ```
 repo:Stefan-org-1/payments-web:environment:prod:job_workflow_ref:Stefan-org-1/ci-templates/.github/workflows/deploy.yml@refs/tags/deploy-v2
 ```
+
+Repos created after July 15, 2026 also carry immutable IDs in `repo:`, such as `Stefan-org-1@350111267/payments-web@1439253121`.
 
 GitHub fills in `job_workflow_ref` with the file that defines the job, so a job you write yourself gets a token naming your workflow, and Azure refuses it. The tag you call is part of the subject: call `@deploy-v2`, not a SHA or a fixed version.
 

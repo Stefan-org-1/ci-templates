@@ -34,8 +34,13 @@ jobs:
         run: |
           token=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" | jq -r .value)
-          # The claims are not secret; the signature is what makes the token usable.
-          python3 -c 'import base64, json, sys; p = sys.argv[1].split(".")[1]; print("Token subject:", json.loads(base64.urlsafe_b64decode(p + "=="))["sub"])' "$token"
+          # What Azure compares. The claims are not secret; the signature makes the token usable.
+          python3 -c '
+          import base64, json, sys
+          claims = json.loads(base64.urlsafe_b64decode(sys.argv[1].split(".")[1] + "=="))
+          for k in ("sub", "job_workflow_ref", "job_workflow_sha", "repository_id"):
+              print(f"{k}: {claims.get(k)}")
+          ' "$token"
           az login --service-principal --username "$AZURE_CLIENT_ID" --tenant "$AZURE_TENANT_ID" \
             --federated-token "$token" --output none
           az account set --subscription "$AZURE_SUBSCRIPTION_ID"
