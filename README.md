@@ -28,7 +28,10 @@ jobs:
   deploy:
     needs: [scan, build]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    uses: Stefan-org-1/ci-templates/.github/workflows/deploy.yml@deploy-v1
+    uses: Stefan-org-1/ci-templates/.github/workflows/deploy.yml@deploy-v2
+    permissions:
+      contents: read
+      id-token: write
     with:
       environment: prod
 ```
@@ -51,7 +54,10 @@ jobs:
   deploy:
     needs: [ci, lint]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    uses: Stefan-org-1/ci-templates/.github/workflows/deploy.yml@deploy-v1
+    uses: Stefan-org-1/ci-templates/.github/workflows/deploy.yml@deploy-v2
+    permissions:
+      contents: read
+      id-token: write
     with:
       environment: prod
 ```
@@ -62,7 +68,7 @@ No template includes the deploy. A job inside a called template cannot wait for 
 
 ## Versions
 
-Each template is versioned on its own, with tags named after it: `scan-v1`, `nodejs-build-v1`, `deploy-v1`, `nodejs-ci-v1`, `release-v1`.
+Each template is versioned on its own, with tags named after it: `scan-v1`, `nodejs-build-v1`, `deploy-v2`, `nodejs-ci-v1`, `release-v1`.
 
 - `<template>-v1` moves forward with every non-breaking release, so fixes reach every repo with no PRs.
 - Breaking changes ship as the next major, such as `scan-v2`. Teams move to it with a PR, within a deprecation window.
@@ -77,6 +83,22 @@ Runs in its own job, on a fresh runner, from a fresh checkout of the exact commi
 ## nodejs-build.yml
 
 Runs `npm ci`, `npm run build` and `npm test` as defined in your `package.json`. Custom steps go in `.github/actions/pre-build/action.yml` and `.github/actions/post-build/action.yml` in your repo.
+
+## deploy.yml
+
+Deploys to the environment you pass. Where the environment has `AZURE_CLIENT_ID` set, it logs in to Azure with GitHub's OIDC token and tags the resource group with the version, the mock deploy. The calling job must grant `id-token: write`.
+
+No secret is stored for Azure. Azure trusts the token only if its subject names your repo, the environment and this template, and the deploy log prints the subject it sent. For example:
+
+```
+repo:Stefan-org-1/payments-web:environment:prod:job_workflow_ref:Stefan-org-1/ci-templates/.github/workflows/deploy.yml@refs/tags/deploy-v2
+```
+
+Repos created after July 15, 2026 also carry immutable IDs in `repo:`, such as `Stefan-org-1@350111267/payments-web@1439253121`.
+
+GitHub fills in `job_workflow_ref` with the file that defines the job, so a job you write yourself gets a token naming your workflow, and Azure refuses it. The tag you call is part of the subject: call `@deploy-v2`, not a SHA or a fixed version.
+
+`deploy-v1` has no Azure login. `deploy-v2` is a major because it needs `id-token: write` from the caller, and a run whose caller does not grant it fails to start.
 
 ## release.yml
 
@@ -132,7 +154,8 @@ Your team owns `ci.yml`. Without asking platform you can:
 | Adds its own job that signs "scan passed" | The signature names your `ci.yml`, not `scan.yml`. Rejected |
 | Tampers with the scan from a hook or its own build | Team code runs in other jobs. The scan runs in its own job, on a fresh runner, from a fresh checkout |
 | Deploys without `deploy.yml` | Rejected (`central-deploy`) |
-| Deploys from a job with no environment | It gets no prod credentials: those belong in the `prod` environment, released only after the gate approves |
+| Deploys from a job with no environment | It gets no prod environment secrets or variables |
+| Adds its own job with `environment: prod` | The gate approves the run, so the job gets the `prod` environment secrets. Keep prod credentials out of secrets: Azure refuses the job's OIDC token, which names your workflow, not `deploy.yml` |
 | Removes the gate from its workflow | The gate is not in the workflow. A repo ruleset and the environment's protection rule require it, and teams cannot edit either |
 | Uses an action not on the allow-list, or not pinned to a commit SHA | The org Actions policy blocks the run |
 
